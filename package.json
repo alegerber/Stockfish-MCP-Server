@@ -1,0 +1,21 @@
+{
+  "name": "stockfish-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Stockfish chess engine analysis",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "chess.js": "^1.0.0-beta.8",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

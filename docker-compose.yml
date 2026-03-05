@@ -1,0 +1,10 @@
+services:
+  stockfish-mcp:
+    build: .
+    image: stockfish-mcp-server
+    container_name: stockfish-mcp-server
+    stdin_open: true  # Required for stdio transport
+    environment:
+      - STOCKFISH_PATH=/usr/games/stockfish
+      - STOCKFISH_THREADS=2
+      - STOCKFISH_HASH=256
