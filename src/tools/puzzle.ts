@@ -1,6 +1,6 @@
 // Tool: Generate a tactic puzzle from a position
 import type { StockfishEngine } from '../services/engine.js';
-import { isValidFen, uciToSan } from '../services/chess-utils.js';
+import { isValidFen } from '../services/chess-utils.js';
 import { formatScore } from '../services/formatting.js';
 import type { TacticPuzzle } from '../types.js';
 import { Chess } from 'chess.js';
@@ -38,14 +38,14 @@ export async function generatePuzzle(
   const solutionSan: string[] = [];
   let currentFen = fen;
   for (const uci of solutionUci) {
-    const san = uciToSan(currentFen, uci);
-    solutionSan.push(san);
     try {
       const c = new Chess(currentFen);
       const from = uci.slice(0, 2);
       const to = uci.slice(2, 4);
       const promotion = uci.length > 4 ? uci[4] : undefined;
-      c.move({ from, to, promotion });
+      const move = c.move({ from, to, promotion });
+      if (!move) break;
+      solutionSan.push(move.san);
       currentFen = c.fen();
     } catch {
       break;
@@ -64,7 +64,7 @@ export async function generatePuzzle(
 
   const puzzle: TacticPuzzle = {
     fen,
-    solution: solutionUci,
+    solution: solutionUci.slice(0, solutionSan.length),
     solutionSan,
     theme,
     difficulty,

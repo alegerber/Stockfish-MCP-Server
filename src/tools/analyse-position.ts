@@ -2,6 +2,7 @@
 import type { StockfishEngine } from '../services/engine.js';
 import { isValidFen, uciToSan } from '../services/chess-utils.js';
 import { formatPositionAnalysis, formatScore } from '../services/formatting.js';
+import { Chess } from 'chess.js';
 
 export async function analysePosition(
   engine: StockfishEngine,
@@ -20,16 +21,14 @@ export async function analysePosition(
     const sanMoves: string[] = [];
     let currentFen = fen;
     for (const uci of line.pv) {
-      const san = uciToSan(currentFen, uci);
-      sanMoves.push(san);
-      // Advance position – lightweight re-parse
       try {
-        const { Chess } = await import('chess.js');
         const c = new Chess(currentFen);
         const from = uci.slice(0, 2);
         const to = uci.slice(2, 4);
         const promotion = uci.length > 4 ? uci[4] : undefined;
-        c.move({ from, to, promotion });
+        const move = c.move({ from, to, promotion });
+        if (!move) break;
+        sanMoves.push(move.san);
         currentFen = c.fen();
       } catch {
         break;

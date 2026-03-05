@@ -39,12 +39,15 @@ export async function analyseGame(
     // Analyse what the best move WAS in the position before
     const posBefore = await engine.analyse(fenBefore, depth, 1);
 
-    // Normalise scores to White's perspective
-    const evalBefore = normalise(prevScore, side);
-    const evalAfter = normalise(posAfter.evaluation, side === 'white' ? 'black' : 'white');
+    // Stockfish reports scores from the side-to-move's perspective.
+    // prevScore is from `side`'s perspective (side-to-move before the move).
+    // posAfter.evaluation is from the opponent's perspective (side-to-move after the move).
+    // Normalise both to the moving player's perspective to compute eval drop.
+    const evalBeforeForMover = centipawns(prevScore); // already from mover's POV
+    const evalAfterForMover = -centipawns(posAfter.evaluation); // negate: opponent's POV → mover's POV
 
     // Eval drop = how much the position worsened for the player who moved
-    const drop = centipawns(evalBefore) - centipawns(evalAfter);
+    const drop = evalBeforeForMover - evalAfterForMover;
 
     const bestMoveUci = posBefore.bestMove;
     const bestMoveSan = uciToSan(fenBefore, bestMoveUci);
@@ -119,14 +122,6 @@ export async function analyseGame(
 }
 
 // --- helpers ---
-
-/** Normalise a score to the given side's perspective (positive = good). */
-function normalise(score: StockfishScore, side: 'white' | 'black'): StockfishScore {
-  if (side === 'black') {
-    return { type: score.type, value: -score.value };
-  }
-  return score;
-}
 
 /** Convert a score to centipawns (mate scores map to large values). */
 function centipawns(score: StockfishScore): number {
