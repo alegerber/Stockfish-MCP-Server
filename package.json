@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "MCP server for Stockfish chess engine analysis",
   "main": "dist/index.js",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "tsc",
