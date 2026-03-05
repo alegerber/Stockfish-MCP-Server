@@ -26,8 +26,8 @@ export const AnalyseGameSchema = z.object({
     .int()
     .min(1)
     .max(MAX_DEPTH)
-    .default(18)
-    .describe('Search depth per move (1–30, default 18). Lower depth = faster.'),
+    .default(22)
+    .describe('Search depth per move (1–30, default 22). Lower depth = faster.'),
 }).strict();
 
 export const LookupOpeningSchema = z.object({

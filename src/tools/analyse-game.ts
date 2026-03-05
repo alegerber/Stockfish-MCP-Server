@@ -1,7 +1,7 @@
 // Tool: Analyse a full game from PGN
 import type { StockfishEngine } from '../services/engine.js';
 import type { MoveAnalysis, MoveClassification, GameAnalysis, StockfishScore } from '../types.js';
-import { parsePgn, uciToSan, lookupOpening } from '../services/chess-utils.js';
+import { parsePgn, uciToSan, lookupOpening, isGameOver } from '../services/chess-utils.js';
 import { formatGameAnalysis, formatScore } from '../services/formatting.js';
 import { START_FEN, BLUNDER_THRESHOLD, MISTAKE_THRESHOLD, INACCURACY_THRESHOLD, GOOD_THRESHOLD, EXCELLENT_THRESHOLD } from '../constants.js';
 
@@ -33,25 +33,45 @@ export async function analyseGame(
     const moveNumber = Math.floor(i / 2) + 1;
     const fenBefore = currentFen;
 
-    // Analyse position AFTER the move was played
-    const posAfter = await engine.analyse(move.fen, depth, 1);
+    // Check if the position after the move is terminal (checkmate/stalemate)
+    const terminal = isGameOver(move.fen);
 
     // Analyse what the best move WAS in the position before
     const posBefore = await engine.analyse(fenBefore, depth, 1);
-
-    // Stockfish reports scores from the side-to-move's perspective.
-    // prevScore is from `side`'s perspective (side-to-move before the move).
-    // posAfter.evaluation is from the opponent's perspective (side-to-move after the move).
-    // Normalise both to the moving player's perspective to compute eval drop.
-    const evalBeforeForMover = centipawns(prevScore); // already from mover's POV
-    const evalAfterForMover = -centipawns(posAfter.evaluation); // negate: opponent's POV → mover's POV
-
-    // Eval drop = how much the position worsened for the player who moved
-    const drop = evalBeforeForMover - evalAfterForMover;
-
     const bestMoveUci = posBefore.bestMove;
     const bestMoveSan = uciToSan(fenBefore, bestMoveUci);
-    const classification = classifyMove(drop, move.san === bestMoveSan);
+
+    let evalAfterScore: StockfishScore;
+    let drop: number;
+    let classification: MoveClassification;
+
+    if (terminal.over && terminal.reason === 'checkmate') {
+      // The mover delivered checkmate — this is always the best move.
+      // From the opponent's POV after checkmate: they are mated → mate 0.
+      evalAfterScore = { type: 'mate', value: 0 };
+      drop = 0;
+      classification = 'best';
+    } else if (terminal.over) {
+      // Stalemate or draw — eval is 0 from both sides
+      evalAfterScore = { type: 'cp', value: 0 };
+      const evalBeforeForMover = centipawns(prevScore);
+      drop = Math.max(0, evalBeforeForMover); // losing a winning position is bad
+      classification = classifyMove(drop, move.san === bestMoveSan);
+    } else {
+      // Normal position — analyse after the move
+      const posAfter = await engine.analyse(move.fen, depth, 1);
+      evalAfterScore = posAfter.evaluation;
+
+      // Stockfish reports scores from the side-to-move's perspective.
+      // prevScore is from `side`'s perspective (side-to-move before the move).
+      // posAfter.evaluation is from the opponent's perspective (side-to-move after the move).
+      // Normalise both to the moving player's perspective to compute eval drop.
+      const evalBeforeForMover = centipawns(prevScore); // already from mover's POV
+      const evalAfterForMover = -centipawns(posAfter.evaluation); // negate: opponent's POV → mover's POV
+
+      drop = evalBeforeForMover - evalAfterForMover;
+      classification = classifyMove(drop, move.san === bestMoveSan);
+    }
 
     moveAnalyses.push({
       moveNumber,
@@ -61,14 +81,14 @@ export async function analyseGame(
       fenBefore,
       fenAfter: move.fen,
       evalBefore: prevScore,
-      evalAfter: posAfter.evaluation,
+      evalAfter: evalAfterScore,
       bestMove: bestMoveUci,
       bestMoveSan,
       classification,
       evalDrop: drop,
     });
 
-    prevScore = posAfter.evaluation;
+    prevScore = evalAfterScore;
     currentFen = move.fen;
 
     // Log progress to stderr
@@ -147,16 +167,43 @@ function count(moves: MoveAnalysis[], side: 'white' | 'black', cls: MoveClassifi
   return moves.filter((m) => m.side === side && m.classification === cls).length;
 }
 
-/** Simplified accuracy model (100% = all best moves). */
+/**
+ * Win probability from centipawn score, using the Lichess model.
+ * Returns a value between 0 and 1.
+ */
+function winProbability(cp: number): number {
+  return 1 / (1 + Math.exp(-0.00368208 * cp));
+}
+
+/**
+ * Accuracy model based on win-probability loss (similar to Lichess/chess.com).
+ *
+ * For each move, accuracy = 103.1668 * exp(-0.04354 * wpLoss) - 3.1669
+ * where wpLoss is the win-probability loss in percentage points.
+ * This gives ~100% for 0 loss, ~55% for a 10pp loss, and near 0% for
+ * large losses. The formula is the Lichess accuracy model.
+ */
 function computeAccuracy(moves: MoveAnalysis[]): number {
   if (moves.length === 0) return 100;
 
-  let totalScore = 0;
+  let totalAccuracy = 0;
   for (const m of moves) {
-    const clampedDrop = Math.max(0, Math.min(m.evalDrop, 500));
-    // Map 0 drop → 100, 500 drop → 0
-    totalScore += Math.max(0, 100 - (clampedDrop / 5));
+    const cpBefore = centipawns(m.evalBefore);
+    const cpAfter = centipawns(m.evalAfter);
+
+    // evalBefore is from the mover's perspective (side-to-move before the move).
+    // evalAfter is from the opponent's perspective (side-to-move after the move).
+    // winProbability(cp) gives win prob for the side whose perspective cp is in.
+    const wpBefore = winProbability(cpBefore);       // mover's win prob before
+    const wpAfter = winProbability(-cpAfter);         // mover's win prob after (negate opponent's POV)
+
+    // Win-probability loss in percentage points (0–100 scale)
+    const wpLoss = Math.max(0, (wpBefore - wpAfter) * 100);
+
+    // Lichess accuracy formula per move
+    const moveAccuracy = Math.min(100, Math.max(0, 103.1668 * Math.exp(-0.04354 * wpLoss) - 3.1669));
+    totalAccuracy += moveAccuracy;
   }
 
-  return totalScore / moves.length;
+  return totalAccuracy / moves.length;
 }

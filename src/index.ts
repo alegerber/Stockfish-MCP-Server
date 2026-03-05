@@ -81,12 +81,12 @@ server.registerTool(
 Takes a PGN and returns per-move evaluations, accuracy scores, error
 counts (blunders/mistakes/inaccuracies), and the detected opening.
 
-This is computationally expensive – depth 18 recommended for reasonable
-speed; depth 12 for fast overviews.
+This is computationally expensive – depth 22 is the default for reliable
+accuracy; use depth 16 for faster but less precise overviews.
 
 Args:
   - pgn (string): Complete PGN of the game
-  - depth (number): Search depth per move 1–30 (default 18)
+  - depth (number): Search depth per move 1–30 (default 22)
 
 Returns:
   Opening name, accuracy %, error summary table, move-by-move analysis
