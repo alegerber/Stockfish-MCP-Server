@@ -1,11 +1,11 @@
 // Tool: Analyse a single chess position
-import type { StockfishEngine } from '../services/engine.js';
+import type { UciEngine } from '../types.js';
 import { isValidFen, uciToSan } from '../services/chess-utils.js';
 import { formatPositionAnalysis, formatScore } from '../services/formatting.js';
 import { Chess } from 'chess.js';
 
 export async function analysePosition(
-  engine: StockfishEngine,
+  engine: UciEngine,
   fen: string,
   depth: number,
   multiPv: number

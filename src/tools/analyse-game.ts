@@ -1,12 +1,12 @@
 // Tool: Analyse a full game from PGN
-import type { StockfishEngine } from '../services/engine.js';
-import type { MoveAnalysis, MoveClassification, GameAnalysis, StockfishScore } from '../types.js';
+import type { UciEngine, MoveAnalysis, MoveClassification, GameAnalysis, UciScore } from '../types.js';
+import { centipawns } from '../types.js';
 import { parsePgn, uciToSan, lookupOpening, isGameOver } from '../services/chess-utils.js';
 import { formatGameAnalysis, formatScore } from '../services/formatting.js';
 import { START_FEN, BLUNDER_THRESHOLD, MISTAKE_THRESHOLD, INACCURACY_THRESHOLD, GOOD_THRESHOLD, EXCELLENT_THRESHOLD } from '../constants.js';
 
 export async function analyseGame(
-  engine: StockfishEngine,
+  engine: UciEngine,
   pgn: string,
   depth: number
 ): Promise<{ text: string; json: Record<string, unknown> }> {
@@ -22,7 +22,7 @@ export async function analyseGame(
 
   // Evaluate starting position
   const startEval = await engine.analyse(START_FEN, depth, 1);
-  let prevScore: StockfishScore = startEval.evaluation;
+  let prevScore: UciScore = startEval.evaluation;
 
   const moveAnalyses: MoveAnalysis[] = [];
   let currentFen = START_FEN;
@@ -41,7 +41,7 @@ export async function analyseGame(
     const bestMoveUci = posBefore.bestMove;
     const bestMoveSan = uciToSan(fenBefore, bestMoveUci);
 
-    let evalAfterScore: StockfishScore;
+    let evalAfterScore: UciScore;
     let drop: number;
     let classification: MoveClassification;
 
@@ -142,14 +142,6 @@ export async function analyseGame(
 }
 
 // --- helpers ---
-
-/** Convert a score to centipawns (mate scores map to large values). */
-function centipawns(score: StockfishScore): number {
-  if (score.type === 'mate') {
-    return score.value > 0 ? 10000 - score.value : -10000 - score.value;
-  }
-  return score.value;
-}
 
 /** Classify a move based on centipawn loss. */
 function classifyMove(drop: number, isBest: boolean): MoveClassification {

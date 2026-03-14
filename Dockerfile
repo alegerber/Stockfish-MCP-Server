@@ -1,10 +1,45 @@
+# ── Stage 1: Build Lc0 from source ─────────────────────────────────────────
+FROM node:22-slim AS lc0-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    g++ \
+    python3 \
+    python3-pip \
+    ninja-build \
+    libopenblas-dev \
+    zlib1g-dev \
+    pkg-config \
+    && pip3 install --break-system-packages meson \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone -b release/0.32 --recurse-submodules \
+      https://github.com/LeelaChessZero/lc0.git /tmp/lc0 \
+    && cd /tmp/lc0 \
+    && ./build.sh release \
+    && cp /tmp/lc0/build/release/lc0 /usr/local/bin/lc0 \
+    && rm -rf /tmp/lc0
+
+# ── Stage 2: Final image ──────────────────────────────────────────────────
 FROM node:22-slim
 
-# Install Stockfish
+# Install Stockfish + Lc0 runtime deps (OpenBLAS for blas backend, curl for weights)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends stockfish && \
+    apt-get install -y --no-install-recommends \
+      stockfish \
+      libopenblas0 \
+      curl \
+      ca-certificates && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Copy Lc0 binary from builder stage
+COPY --from=lc0-builder /usr/local/bin/lc0 /usr/local/bin/lc0
+
+# Download Maia-1900 neural network weights (~25MB)
+RUN mkdir -p /usr/share/lc0 && \
+    curl -fsSL -o /usr/share/lc0/maia-1900.pb.gz \
+      https://github.com/CSSLab/maia-chess/releases/download/v1.0/maia-1900.pb.gz
 
 WORKDIR /app
 
@@ -17,10 +52,16 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npm run build
 
-# Environment
+# Stockfish environment
 ENV STOCKFISH_PATH=/usr/games/stockfish
 ENV STOCKFISH_THREADS=2
 ENV STOCKFISH_HASH=128
+
+# Lc0 environment (enabled by default with Maia-1900 network)
+ENV LC0_PATH=/usr/local/bin/lc0
+ENV LC0_WEIGHTS_PATH=/usr/share/lc0/maia-1900.pb.gz
+ENV LC0_THREADS=2
+ENV LC0_HASH=128
 
 # MCP uses stdio transport
 CMD ["node", "dist/index.js"]

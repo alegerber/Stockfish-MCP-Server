@@ -1,8 +1,8 @@
 // Formatting utilities for engine output
-import type { StockfishScore, PositionAnalysis, MoveAnalysis, MoveClassification, GameAnalysis } from '../types.js';
+import type { UciScore, PositionAnalysis, MoveAnalysis, MoveClassification, GameAnalysis } from '../types.js';
 
-/** Format a Stockfish score as a human-readable string. */
-export function formatScore(score: StockfishScore): string {
+/** Format a UCI score as a human-readable string. */
+export function formatScore(score: UciScore): string {
   if (score.type === 'mate') {
     return score.value > 0 ? `M${score.value}` : `-M${Math.abs(score.value)}`;
   }

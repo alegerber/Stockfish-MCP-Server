@@ -1,7 +1,7 @@
-// Main entry point – Stockfish MCP Server
+// Main entry point – Chess Engine MCP Server (Stockfish + Lc0)
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { StockfishEngine } from './services/engine.js';
+import { StockfishEngine, Lc0Engine } from './services/engine.js';
 import {
   AnalysePositionSchema,
   AnalyseGameSchema,
@@ -14,16 +14,29 @@ import { analyseGame } from './tools/analyse-game.js';
 import { lookupOpeningByQuery, identifyOpeningFromPgn } from './tools/openings.js';
 import { generatePuzzle } from './tools/puzzle.js';
 
-// Resolve engine binary path from env or default
+// ── Stockfish configuration ──────────────────────────────────────────────
 const SF_PATH = process.env.STOCKFISH_PATH ?? 'stockfish';
 const SF_THREADS = parseInt(process.env.STOCKFISH_THREADS ?? '2', 10);
 const SF_HASH = parseInt(process.env.STOCKFISH_HASH ?? '128', 10);
 
-const engine = new StockfishEngine(SF_PATH, SF_THREADS, SF_HASH);
+const sfEngine = new StockfishEngine(SF_PATH, SF_THREADS, SF_HASH);
+
+// ── Lc0 configuration (optional — only enabled when LC0_WEIGHTS_PATH is set) ─
+const LC0_PATH = process.env.LC0_PATH ?? 'lc0';
+const LC0_WEIGHTS = process.env.LC0_WEIGHTS_PATH ?? '';
+const LC0_BACKEND = process.env.LC0_BACKEND; // undefined = Lc0 auto-detects
+const LC0_THREADS = parseInt(process.env.LC0_THREADS ?? '2', 10);
+const LC0_HASH = parseInt(process.env.LC0_HASH ?? '128', 10);
+const lc0Enabled = LC0_WEIGHTS.length > 0;
+let lc0Engine: Lc0Engine | null = null;
+
+if (lc0Enabled) {
+  lc0Engine = new Lc0Engine(LC0_PATH, LC0_WEIGHTS, LC0_BACKEND, LC0_THREADS, LC0_HASH);
+}
 
 const server = new McpServer({
-  name: 'stockfish-mcp-server',
-  version: '1.0.0',
+  name: 'chess-engine-mcp-server',
+  version: '2.0.0',
 });
 
 // ── Tool 1: Analyse Position ──────────────────────────────────────────────
@@ -58,7 +71,7 @@ Examples:
   },
   async ({ fen, depth, multiPv }) => {
     try {
-      const result = await analysePosition(engine, fen, depth, multiPv);
+      const result = await analysePosition(sfEngine, fen, depth, multiPv);
       return {
         content: [{ type: 'text', text: result.text }],
         structuredContent: result.json,
@@ -105,7 +118,7 @@ Examples:
   },
   async ({ pgn, depth }) => {
     try {
-      const result = await analyseGame(engine, pgn, depth);
+      const result = await analyseGame(sfEngine, pgn, depth);
       return {
         content: [{ type: 'text', text: result.text }],
         structuredContent: result.json,
@@ -222,7 +235,7 @@ Examples:
   },
   async ({ fen, depth }) => {
     try {
-      const result = await generatePuzzle(engine, fen, depth);
+      const result = await generatePuzzle(sfEngine, fen, depth);
       return {
         content: [{ type: 'text', text: result.text }],
         structuredContent: result.json,
@@ -234,21 +247,181 @@ Examples:
   }
 );
 
+// ── Lc0 Tools (only registered when LC0_WEIGHTS_PATH is set) ──────────────
+
+/** Guard: return the Lc0 engine or throw a user-friendly error. */
+function requireLc0(): Lc0Engine {
+  if (!lc0Engine) {
+    throw new Error('Lc0 is not configured. Set the LC0_WEIGHTS_PATH environment variable to enable Lc0 tools.');
+  }
+  return lc0Engine;
+}
+
+if (lc0Enabled) {
+  // ── Lc0 Tool 1: Analyse Position ─────────────────────────────────────
+  server.registerTool(
+    'lc0_analyse_position',
+    {
+      title: 'Analyse Chess Position (Lc0)',
+      description: `Analyse a chess position using the Leela Chess Zero (Lc0) neural network engine.
+
+Lc0 uses a neural network for evaluation, providing a different perspective
+from traditional alpha-beta engines like Stockfish. Particularly strong at
+positional and strategic evaluation.
+
+Note: The "depth" parameter is mapped to Lc0 node counts internally since
+MCTS depth is not comparable to alpha-beta depth.
+
+Args:
+  - fen (string): FEN of the position
+  - depth (number): Search strength 1–30 (mapped to node count; default 20)
+  - multiPv (number): Number of lines 1–5 (default 3)
+
+Returns:
+  Evaluation (cp or mate), best move in UCI+SAN, top lines with scores.
+
+Examples:
+  - "Analyse this position with Lc0: rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+  - "What does the neural network think of this position?"`,
+      inputSchema: AnalysePositionSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ fen, depth, multiPv }) => {
+      try {
+        const result = await analysePosition(requireLc0(), fen, depth, multiPv);
+        return {
+          content: [{ type: 'text', text: result.text }],
+          structuredContent: result.json,
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
+      }
+    }
+  );
+
+  // ── Lc0 Tool 2: Analyse Game ─────────────────────────────────────────
+  server.registerTool(
+    'lc0_analyse_game',
+    {
+      title: 'Analyse Full Chess Game (Lc0)',
+      description: `Analyse an entire chess game move by move using Leela Chess Zero.
+
+Provides a neural-network-based evaluation of every move, which can
+highlight different aspects than a traditional engine. Especially useful
+for comparing with Stockfish analysis to get a fuller picture.
+
+Note: The "depth" parameter is mapped to Lc0 node counts internally.
+Higher depth values use more nodes and take longer.
+
+Args:
+  - pgn (string): Complete PGN of the game
+  - depth (number): Search strength per move 1–30 (mapped to nodes; default 22)
+
+Returns:
+  Opening name, accuracy %, error summary table, move-by-move analysis
+  with classification (best/great/excellent/good/inaccuracy/mistake/blunder).
+
+Examples:
+  - "Analyse this game with Lc0: 1. e4 e5 2. Nf3 Nc6 ..."
+  - "Get the neural network's take on my game [PGN]"`,
+      inputSchema: AnalyseGameSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ pgn, depth }) => {
+      try {
+        const result = await analyseGame(requireLc0(), pgn, depth);
+        return {
+          content: [{ type: 'text', text: result.text }],
+          structuredContent: result.json,
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
+      }
+    }
+  );
+
+  // ── Lc0 Tool 3: Generate Puzzle ──────────────────────────────────────
+  server.registerTool(
+    'lc0_generate_puzzle',
+    {
+      title: 'Generate Tactic Puzzle (Lc0)',
+      description: `Generate a tactic puzzle using Leela Chess Zero's neural network.
+
+Uses Lc0's evaluation to find tactical sequences, which may differ from
+Stockfish in complex positions where intuition matters.
+
+Args:
+  - fen (string): FEN of the position
+  - depth (number): Search strength 1–30 (mapped to nodes; default 22)
+
+Returns:
+  Puzzle FEN, theme, difficulty, solution in UCI and SAN, and explanation.
+
+Examples:
+  - "Make a puzzle with Lc0 from this position: [FEN]"
+  - "Find tactics using the neural network: ..."`,
+      inputSchema: GeneratePuzzleSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ fen, depth }) => {
+      try {
+        const result = await generatePuzzle(requireLc0(), fen, depth);
+        return {
+          content: [{ type: 'text', text: result.text }],
+          structuredContent: result.json,
+        };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
+      }
+    }
+  );
+
+  console.error('[chess-mcp] Lc0 tools registered: lc0_analyse_position, lc0_analyse_game, lc0_generate_puzzle');
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  console.error('[stockfish-mcp] Initialising Stockfish engine...');
-  await engine.init();
-  console.error('[stockfish-mcp] Engine ready. Starting stdio transport...');
+  console.error('[chess-mcp] Initialising Stockfish engine...');
+  await sfEngine.init();
+  console.error('[chess-mcp] Stockfish ready.');
 
+  if (lc0Engine) {
+    console.error('[chess-mcp] Initialising Lc0 engine...');
+    await lc0Engine.init();
+    console.error('[chess-mcp] Lc0 ready.');
+  } else {
+    console.error('[chess-mcp] Lc0 disabled (set LC0_WEIGHTS_PATH to enable).');
+  }
+
+  console.error('[chess-mcp] Starting stdio transport...');
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[stockfish-mcp] MCP server running on stdio');
+  console.error('[chess-mcp] MCP server running on stdio');
 
   // Graceful shutdown
   const shutdown = async (): Promise<void> => {
-    console.error('[stockfish-mcp] Shutting down...');
-    await engine.quit();
+    console.error('[chess-mcp] Shutting down...');
+    await sfEngine.quit();
+    if (lc0Engine) await lc0Engine.quit();
     process.exit(0);
   };
 
@@ -257,6 +430,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('[stockfish-mcp] Fatal:', err);
+  console.error('[chess-mcp] Fatal:', err);
   process.exit(1);
 });

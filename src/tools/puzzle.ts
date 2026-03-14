@@ -1,12 +1,11 @@
 // Tool: Generate a tactic puzzle from a position
-import type { StockfishEngine } from '../services/engine.js';
+import type { UciEngine, TacticPuzzle } from '../types.js';
 import { isValidFen } from '../services/chess-utils.js';
 import { formatScore } from '../services/formatting.js';
-import type { TacticPuzzle } from '../types.js';
 import { Chess } from 'chess.js';
 
 export async function generatePuzzle(
-  engine: StockfishEngine,
+  engine: UciEngine,
   fen: string,
   depth: number
 ): Promise<{ text: string; json: Record<string, unknown> }> {
