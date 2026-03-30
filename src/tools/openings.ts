@@ -1,5 +1,5 @@
 // Tools: Opening lookup and identification
-import { searchOpenings, lookupOpening, getAllOpenings, parsePgn } from '../services/chess-utils.js';
+import { searchOpenings, lookupOpening, parsePgn } from '../services/chess-utils.js';
 
 export function lookupOpeningByQuery(
   query: string
