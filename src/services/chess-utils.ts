@@ -1,7 +1,6 @@
 // Chess utility service wrapping chess.js
 import { Chess } from 'chess.js';
 import type { OpeningInfo } from '../types.js';
-import { START_FEN } from '../constants.js';
 
 // Bundled ECO opening book (A–E codes, most common lines).
 // Kept small to stay self-contained; extend via external DB if desired.
