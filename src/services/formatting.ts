@@ -1,5 +1,5 @@
 // Formatting utilities for engine output
-import type { StockfishScore, PositionAnalysis, MoveAnalysis, MoveClassification, GameAnalysis } from '../types.js';
+import type { StockfishScore, PositionAnalysis, MoveClassification, GameAnalysis } from '../types.js';
 
 /** Format a Stockfish score as a human-readable string. */
 export function formatScore(score: StockfishScore): string {
