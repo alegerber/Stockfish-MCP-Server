@@ -1,8 +1,10 @@
-# Stockfish MCP Server
+# Chess Engine MCP Server
 
-A Model Context Protocol (MCP) server that wraps the Stockfish chess engine, providing AI assistants with professional-grade chess analysis capabilities.
+A Model Context Protocol (MCP) server providing AI assistants with professional-grade chess analysis using **Stockfish** (alpha-beta) and optionally **Leela Chess Zero / Lc0** (neural network). Both engines share the same tool interface and run side-by-side when Lc0 is configured.
 
 ## Features
+
+### Stockfish tools (always available)
 
 | Tool | Description |
 |------|-------------|
@@ -12,14 +14,28 @@ A Model Context Protocol (MCP) server that wraps the Stockfish chess engine, pro
 | `sf_identify_opening` | Identify the opening from moves or PGN |
 | `sf_generate_puzzle` | Generate tactic puzzles from positions |
 
+### Lc0 tools (enabled when `LC0_WEIGHTS_PATH` is set)
+
+| Tool | Description |
+|------|-------------|
+| `lc0_analyse_position` | Analyse a position with the Lc0 neural network |
+| `lc0_analyse_game` | Full game analysis using Lc0 evaluation |
+| `lc0_generate_puzzle` | Generate tactic puzzles using Lc0's evaluation |
+
 ## Quick Start
 
 ### Option 1: Docker (recommended)
 
 ```bash
-# Build and run
-docker build -t stockfish-mcp-server .
-docker run -i stockfish-mcp-server
+# Stockfish only
+docker build -t chess-mcp-server .
+docker run -i chess-mcp-server
+
+# With Lc0 (mount weights file)
+docker run -i \
+  -e LC0_WEIGHTS_PATH=/weights/lc0.pb.gz \
+  -v /path/to/weights:/weights \
+  chess-mcp-server
 
 # Or with docker compose
 docker compose up --build
@@ -39,32 +55,65 @@ Prerequisites: Node.js 22+, Stockfish binary installed.
 npm install
 npm run build
 
-# Run
+# Run (Stockfish only)
 npm start
+
+# Run with Lc0
+LC0_WEIGHTS_PATH=/path/to/lc0.pb.gz npm start
 ```
 
 ## Configuration
 
-Environment variables:
+### Stockfish environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `STOCKFISH_PATH` | `stockfish` | Path to the Stockfish binary |
-| `STOCKFISH_THREADS` | `2` | Number of CPU threads for search |
+| `STOCKFISH_THREADS` | `2` | Number of CPU threads |
 | `STOCKFISH_HASH` | `128` | Hash table size in MB |
+
+### Lc0 environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LC0_WEIGHTS_PATH` | *(unset)* | Path to a `.pb.gz` weights file — **required to enable Lc0** |
+| `LC0_PATH` | `lc0` | Path to the Lc0 binary |
+| `LC0_BACKEND` | *(auto)* | Lc0 backend: `cuda`, `metal`, `cpu`, etc. |
+| `LC0_THREADS` | `2` | Number of CPU threads for Lc0 |
+| `LC0_HASH` | `128` | Hash table size in MB for Lc0 |
+
+> **Note:** The `depth` parameter for Lc0 tools is mapped internally to node counts via an exponential table (100 nodes at depth 1 → 1 000 000 nodes at depth 30), since MCTS depth is not comparable to alpha-beta depth.
 
 ## Claude Desktop Integration
 
 Add to your `claude_desktop_config.json`:
 
-### Docker
+### Docker (Stockfish only)
 
 ```json
 {
   "mcpServers": {
-    "stockfish": {
+    "chess": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "stockfish-mcp-server"]
+      "args": ["run", "-i", "--rm", "chess-mcp-server"]
+    }
+  }
+}
+```
+
+### Docker (Stockfish + Lc0)
+
+```json
+{
+  "mcpServers": {
+    "chess": {
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "LC0_WEIGHTS_PATH=/weights/lc0.pb.gz",
+        "-v", "/path/to/weights:/weights",
+        "chess-mcp-server"
+      ]
     }
   }
 }
@@ -75,13 +124,15 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "stockfish": {
+    "chess": {
       "command": "node",
-      "args": ["/path/to/stockfish-mcp-server/dist/index.js"],
+      "args": ["/path/to/chess-mcp-server/dist/index.js"],
       "env": {
         "STOCKFISH_PATH": "stockfish",
         "STOCKFISH_THREADS": "2",
-        "STOCKFISH_HASH": "256"
+        "STOCKFISH_HASH": "256",
+        "LC0_PATH": "lc0",
+        "LC0_WEIGHTS_PATH": "/path/to/lc0.pb.gz"
       }
     }
   }
@@ -90,39 +141,55 @@ Add to your `claude_desktop_config.json`:
 
 ## Usage Examples
 
-### Analyse a position
+### Stockfish
+
 > "Analyse this position: rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
 
-### Analyse a full game
 > "Review this game: 1. e4 e5 2. Qh5 Nc6 3. Nf3 g6 4. Qh4 Be7 ..."
 
-### Look up an opening
 > "What is the Wayward Queen Attack?"
 
-### Identify an opening
 > "What opening is 1. e4 e5 2. Nf3 Nc6 3. Bc4?"
 
-### Generate a puzzle
 > "Create a tactic puzzle from this position: [FEN]"
+
+### Lc0
+
+> "What does the neural network think of this position?"
+
+> "Analyse this game with Lc0 and compare with Stockfish: 1. e4 e5 ..."
+
+> "Find tactics using Lc0 in this position: [FEN]"
 
 ## Architecture
 
 ```
 src/
-├── index.ts              # MCP server entry point, tool registration
-├── types.ts              # TypeScript type definitions
-├── constants.ts          # Shared constants and thresholds
+├── index.ts              # MCP server entry, tool registration (Stockfish + Lc0)
+├── types.ts              # TypeScript interfaces (UciEngine, UciLine, UciScore, …)
+├── constants.ts          # Thresholds, defaults, LC0_DEPTH_TO_NODES mapping
 ├── schemas/
 │   └── index.ts          # Zod input validation schemas
 ├── services/
-│   ├── engine.ts         # Stockfish UCI process wrapper
+│   ├── engine.ts         # BaseUciEngine, StockfishEngine, Lc0Engine
 │   ├── chess-utils.ts    # chess.js wrapper (PGN/FEN/SAN/openings)
-│   └── formatting.ts     # Markdown/text output formatting
+│   └── formatting.ts     # Markdown output formatting
 └── tools/
     ├── analyse-position.ts  # Single position analysis
-    ├── analyse-game.ts      # Full game analysis
+    ├── analyse-game.ts      # Full game analysis + accuracy model
     ├── openings.ts          # Opening lookup & identification
     └── puzzle.ts            # Tactic puzzle generation
+```
+
+Both engines implement the `UciEngine` interface and are interchangeable at the tool layer — all tool functions accept a `UciEngine` parameter, so `sf_*` and `lc0_*` tools share identical logic with different engine instances.
+
+## Development
+
+```bash
+npm install          # Install dependencies
+npm run build        # Compile TypeScript → dist/
+npm test             # Run unit tests (Vitest, ~125 tests)
+npm run lint         # ESLint
 ```
 
 ## License

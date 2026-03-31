@@ -1,10 +1,22 @@
 services:
-  stockfish-mcp:
+  chess-engine-mcp:
     build: .
-    image: stockfish-mcp-server
-    container_name: stockfish-mcp-server
+    image: chess-engine-mcp-server
+    container_name: chess-engine-mcp-server
     stdin_open: true  # Required for stdio transport
     environment:
+      # Stockfish
       - STOCKFISH_PATH=/usr/games/stockfish
       - STOCKFISH_THREADS=2
       - STOCKFISH_HASH=256
+      # Lc0 (enabled by default with Maia-1900 network)
+      - LC0_PATH=/usr/local/bin/lc0
+      - LC0_WEIGHTS_PATH=/usr/share/lc0/maia-1900.pb.gz
+      - LC0_THREADS=2
+      - LC0_HASH=128
+      # Uncomment to force a specific Lc0 backend (auto-detected by default):
+      # - LC0_BACKEND=blas
+    # To use a custom weights file, mount it:
+    # volumes:
+    #   - /path/to/custom-weights.pb.gz:/usr/share/lc0/custom.pb.gz:ro
+    # Then set: LC0_WEIGHTS_PATH=/usr/share/lc0/custom.pb.gz
