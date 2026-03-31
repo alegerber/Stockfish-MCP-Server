@@ -1,5 +1,5 @@
 # ── Stage 1: Build Lc0 from source ─────────────────────────────────────────
-FROM node:22-slim AS lc0-builder
+FROM node:24-slim AS lc0-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -21,7 +21,7 @@ RUN git clone -b release/0.32 --recurse-submodules \
     && rm -rf /tmp/lc0
 
 # ── Stage 2: Final image ──────────────────────────────────────────────────
-FROM node:22-slim
+FROM node:24-slim
 
 # Install Stockfish + Lc0 runtime deps (OpenBLAS for blas backend, curl for weights)
 RUN apt-get update && \
