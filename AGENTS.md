@@ -24,6 +24,16 @@ src/
     ├── analyse-game.ts      # sf/lc0_analyse_game — full PGN move-by-move analysis
     ├── openings.ts          # sf_lookup_opening, sf_identify_opening
     └── puzzle.ts            # sf/lc0_generate_puzzle — tactic puzzle generation
+tests/
+├── chess-utils.test.ts
+├── formatting.test.ts
+├── schemas.test.ts
+├── constants.test.ts
+├── types.test.ts
+├── tools-openings.test.ts
+├── tools-analyse-position.test.ts
+├── tools-analyse-game.test.ts
+└── tools-puzzle.test.ts
 ```
 
 ### Key design decisions
@@ -114,7 +124,46 @@ ESM throughout. All local imports use `.js` extensions (e.g., `'./services/engin
 
 ## Testing
 
-No test framework is configured. To verify tools work end-to-end, send JSON-RPC messages to the Docker container over stdin:
+Tests use **Vitest** (`npm test`). ~125 unit tests, no engine binary required — all tool tests use a mock `UciEngine` via `vi.fn()`.
+
+```bash
+npm test        # run all tests once
+npm run lint    # ESLint (TypeScript rules configured in eslint.config.js)
+```
+
+### Test files
+
+| File | What it covers |
+|---|---|
+| `tests/chess-utils.test.ts` | `isValidFen`, `uciToSan`, `lookupOpening`, `searchOpenings`, `isGameOver`, `parsePgn` |
+| `tests/formatting.test.ts` | `formatScore`, `formatPositionAnalysis`, `formatGameAnalysis` |
+| `tests/schemas.test.ts` | Zod schema validation: bounds, required fields, unknown field rejection |
+| `tests/constants.test.ts` | `LC0_DEPTH_TO_NODES` shape/monotonicity, threshold ordering, default/max values |
+| `tests/types.test.ts` | `centipawns()` — cp passthrough, positive/negative mate conversions |
+| `tests/tools-openings.test.ts` | `lookupOpeningByQuery`, `identifyOpeningFromPgn` — found/not-found/ECO/headers |
+| `tests/tools-analyse-position.test.ts` | `analysePosition` — invalid FEN error, JSON structure, PV SAN enrichment, engine call args |
+| `tests/tools-analyse-game.test.ts` | `analyseGame` — empty PGN error, accuracy bounds, move fields, opening detection, summary counts |
+| `tests/tools-puzzle.test.ts` | `generatePuzzle` — invalid FEN/no-lines errors, difficulty classification, mate theme, solution cap |
+
+### Mock engine pattern
+
+```ts
+function makeEngine(overrides: Partial<PositionAnalysis> = {}): UciEngine {
+  return {
+    displayName: 'MockEngine',
+    init: vi.fn(),
+    analyse: vi.fn(async (fen) => ({ fen, bestMove: 'e2e4', evaluation: { type: 'cp', value: 30 }, lines: [...], depth: 20, ...overrides })),
+    bestMove: vi.fn(async () => 'e2e4'),
+    quit: vi.fn(),
+  };
+}
+```
+
+Engine integration tests (real Stockfish/Lc0 subprocess) are not present — they require binaries in CI.
+
+### End-to-end smoke test
+
+To verify tools work against a real engine, send JSON-RPC messages to the Docker container over stdin:
 
 ```bash
 docker run -i --rm chess-engine-mcp-server <<'EOF'
@@ -138,6 +187,6 @@ Diagnostic output goes to stderr. JSON-RPC responses go to stdout.
 
 ## Code Style
 
-- TypeScript strict mode, no linter or formatter configured
+- TypeScript strict mode; ESLint with `@typescript-eslint` rules (`eslint.config.js`)
 - Explicit return types on exported functions
 - `console.error()` for all logging (stdout is reserved for MCP JSON-RPC)
