@@ -12,13 +12,20 @@ If you discover a security vulnerability in this project, please report it respo
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email **Alexander Gerber** at the address listed on the [GitHub profile](https://github.com/alegerber) with:
+Instead, please report vulnerabilities by emailing the maintainers directly or by using [GitHub's private vulnerability reporting](https://github.com/alegerber/stockfish-mcp-server/security/advisories/new).
+
+When reporting, please include:
 
 - A description of the vulnerability
 - Steps to reproduce the issue
-- Any potential impact assessment
+- The potential impact
+- Any suggested fix (if applicable)
 
-You can expect an initial response within **72 hours**. Once the issue is confirmed, a fix will be prioritized and released as soon as possible.
+## Response Timeline
+
+- **Acknowledgement**: We will acknowledge receipt of your report within 72 hours.
+- **Assessment**: We aim to assess and validate the vulnerability within 7 days.
+- **Fix**: Critical vulnerabilities will be prioritized and patched as soon as possible.
 
 ## Security Considerations
 
