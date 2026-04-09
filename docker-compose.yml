@@ -1,8 +1,8 @@
 services:
   chess-engine-mcp:
     build: .
-    image: chess-engine-mcp-server
-    container_name: chess-engine-mcp-server
+    image: stockfish-lc0-mcp
+    container_name: stockfish-lc0-mcp
     stdin_open: true  # Required for stdio transport
     environment:
       # Stockfish
