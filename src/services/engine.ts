@@ -264,6 +264,10 @@ abstract class BaseUciEngine implements UciEngine {
   async quit(): Promise<void> {
     if (this.process) {
       await this.send('quit');
+      // Remove listeners before kill() so the async exit event cannot
+      // fire pendingReject and corrupt a subsequent init() call.
+      this.process.removeAllListeners('error');
+      this.process.removeAllListeners('exit');
       this.process.kill();
       this.process = null;
       this.ready = false;
