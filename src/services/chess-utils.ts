@@ -70,6 +70,44 @@ export function isValidFen(fen: string): boolean {
   }
 }
 
+/**
+ * Validate a FEN string and surface the underlying error message.
+ * Returns `{ valid: true }` on success or `{ valid: false; error: string }` on failure.
+ */
+export function validateFen(fen: string): { valid: true } | { valid: false; error: string } {
+  try {
+    new Chess(fen);
+    return { valid: true };
+  } catch (e) {
+    return { valid: false, error: e instanceof Error ? e.message : 'Invalid FEN' };
+  }
+}
+
+/**
+ * Convert a sequence of UCI moves to SAN notation starting from the given FEN.
+ * Stops at the first move that cannot be applied and returns what was converted so far.
+ */
+export function uciSequenceToSan(startFen: string, uciMoves: string[]): string[] {
+  const sanMoves: string[] = [];
+  let currentFen = startFen;
+  for (const uci of uciMoves) {
+    try {
+      const chess = new Chess(currentFen);
+      const move = chess.move({
+        from: uci.slice(0, 2),
+        to: uci.slice(2, 4),
+        promotion: uci.length > 4 ? uci[4] : undefined,
+      });
+      if (!move) break;
+      sanMoves.push(move.san);
+      currentFen = chess.fen();
+    } catch {
+      break;
+    }
+  }
+  return sanMoves;
+}
+
 /** Convert UCI move to SAN in the context of a given FEN. */
 export function uciToSan(fen: string, uci: string): string {
   try {

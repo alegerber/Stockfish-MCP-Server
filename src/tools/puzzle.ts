@@ -1,16 +1,17 @@
 // Tool: Generate a tactic puzzle from a position
 import type { UciEngine, TacticPuzzle } from '../types.js';
-import { isValidFen } from '../services/chess-utils.js';
+import { centipawns } from '../types.js';
+import { validateFen, uciSequenceToSan } from '../services/chess-utils.js';
 import { formatScore } from '../services/formatting.js';
-import { Chess } from 'chess.js';
 
 export async function generatePuzzle(
   engine: UciEngine,
   fen: string,
   depth: number
 ): Promise<{ text: string; json: Record<string, unknown> }> {
-  if (!isValidFen(fen)) {
-    throw new Error(`Invalid FEN: "${fen}". Please provide a valid position.`);
+  const fenCheck = validateFen(fen);
+  if (!fenCheck.valid) {
+    throw new Error(`Invalid FEN: "${fen}". ${fenCheck.error}`);
   }
 
   // Analyse with 2 PVs to compare best vs second-best
@@ -25,31 +26,14 @@ export async function generatePuzzle(
   const secondLine = lines.length > 1 ? lines[1] : null;
 
   // Determine if the position has a clear tactical solution
-  const bestScore = scoreToNum(bestLine.score);
-  const secondScore = secondLine ? scoreToNum(secondLine.score) : bestScore - 300;
+  const bestScore = centipawns(bestLine.score);
+  const secondScore = secondLine ? centipawns(secondLine.score) : bestScore - 300;
   const advantage = bestScore - secondScore;
 
   // Build the solution sequence (first 3–5 moves of the PV)
   const solutionLength = Math.min(bestLine.pv.length, 5);
   const solutionUci = bestLine.pv.slice(0, solutionLength);
-
-  // Convert to SAN
-  const solutionSan: string[] = [];
-  let currentFen = fen;
-  for (const uci of solutionUci) {
-    try {
-      const c = new Chess(currentFen);
-      const from = uci.slice(0, 2);
-      const to = uci.slice(2, 4);
-      const promotion = uci.length > 4 ? uci[4] : undefined;
-      const move = c.move({ from, to, promotion });
-      if (!move) break;
-      solutionSan.push(move.san);
-      currentFen = c.fen();
-    } catch {
-      break;
-    }
-  }
+  const solutionSan = uciSequenceToSan(fen, solutionUci);
 
   // Classify difficulty
   const difficulty = advantage > 500 ? 'easy' : advantage > 200 ? 'medium' : 'hard';
@@ -80,17 +64,10 @@ export async function generatePuzzle(
     `||**Explanation:** ${explanation}||`,
   ].join('\n');
 
-  return { text, json: puzzle as unknown as Record<string, unknown> };
+  return { text, json: puzzle };
 }
 
 // --- helpers ---
-
-function scoreToNum(score: { type: string; value: number }): number {
-  if (score.type === 'mate') {
-    return score.value > 0 ? 10000 - Math.abs(score.value) : -10000 + Math.abs(score.value);
-  }
-  return score.value;
-}
 
 function detectTheme(
   fen: string,

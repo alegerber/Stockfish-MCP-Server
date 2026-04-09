@@ -56,7 +56,9 @@ function parseInfoLine(line: string): UciLine | null {
   // Parse score
   const scoreIdx = tokens.indexOf('score');
   if (scoreIdx < 0) return null;
-  const scoreType = tokens[scoreIdx + 1] as 'cp' | 'mate';
+  const scoreTypeStr = tokens[scoreIdx + 1];
+  if (scoreTypeStr !== 'cp' && scoreTypeStr !== 'mate') return null;
+  const scoreType = scoreTypeStr;
   const scoreValue = parseInt(tokens[scoreIdx + 2], 10);
   if (isNaN(scoreValue)) return null;
   const score: UciScore = { type: scoreType, value: scoreValue };
@@ -94,6 +96,18 @@ abstract class BaseUciEngine implements UciEngine {
   protected ready = false;
   abstract readonly displayName: string;
 
+  /**
+   * Called when the process crashes or exits while a sendAndWait call is
+   * in flight — rejects the pending promise so it doesn't hang forever.
+   */
+  private pendingReject: ((err: Error) => void) | null = null;
+
+  /**
+   * Serialises sendAndWait calls so only one is in flight at a time,
+   * preventing multiple data listeners from accumulating on stdout.
+   */
+  private sendQueue: Promise<void> = Promise.resolve();
+
   constructor(binaryPath: string) {
     this.binaryPath = binaryPath;
   }
@@ -113,14 +127,20 @@ abstract class BaseUciEngine implements UciEngine {
 
     this.process.on('error', (err) => {
       console.error(`[${this.displayName}] Process error: ${err.message}`);
+      const reject = this.pendingReject;
+      this.pendingReject = null;
       this.process = null;
       this.ready = false;
+      reject?.(new Error(`Engine process error: ${err.message}`));
     });
 
     this.process.on('exit', (code) => {
       console.error(`[${this.displayName}] Process exited with code ${code}`);
+      const reject = this.pendingReject;
+      this.pendingReject = null;
       this.process = null;
       this.ready = false;
+      reject?.(new Error(`Engine process exited with code ${code}`));
     });
 
     await this.sendAndWait('uci', 'uciok');
@@ -146,7 +166,19 @@ abstract class BaseUciEngine implements UciEngine {
     });
   }
 
+  /**
+   * Send a command and collect all output until a line starting with `until`
+   * is received. Calls are serialised via sendQueue so only one listener is
+   * ever attached to stdout at a time.
+   */
   protected sendAndWait(cmd: string, until: string, timeoutMs = 60_000): Promise<string[]> {
+    const queued = this.sendQueue.then(() => this._sendAndWait(cmd, until, timeoutMs));
+    // Always advance the queue, even when this call rejects.
+    this.sendQueue = queued.then(() => {}, () => {});
+    return queued;
+  }
+
+  private _sendAndWait(cmd: string, until: string, timeoutMs: number): Promise<string[]> {
     return new Promise((resolve, reject) => {
       if (!this.process) return reject(new Error(`${this.displayName} not running`));
 
@@ -167,6 +199,7 @@ abstract class BaseUciEngine implements UciEngine {
           if (trimmed.startsWith(until)) {
             cleanup();
             resolve(lines);
+            return;
           }
         }
       };
@@ -174,10 +207,21 @@ abstract class BaseUciEngine implements UciEngine {
       const cleanup = (): void => {
         clearTimeout(timeout);
         this.process?.stdout.removeListener('data', onData);
+        this.pendingReject = null;
+      };
+
+      this.pendingReject = (err: Error): void => {
+        cleanup();
+        reject(err);
       };
 
       this.process.stdout.on('data', onData);
-      this.process.stdin.write(`${cmd}\n`);
+      this.process.stdin.write(`${cmd}\n`, (err) => {
+        if (err) {
+          cleanup();
+          reject(err);
+        }
+      });
     });
   }
 
@@ -199,6 +243,10 @@ abstract class BaseUciEngine implements UciEngine {
     const lines = parseInfoLines(output, multiPv);
     const bestMoveLine = output.find((l) => l.startsWith('bestmove'));
     const bestMove = bestMoveLine?.split(/\s+/)[1] ?? '';
+
+    if (lines.length === 0) {
+      console.error(`[${this.displayName}] No analysis lines returned for FEN: ${fen}`);
+    }
 
     const topLine = lines[0];
     const evaluation: UciScore = topLine

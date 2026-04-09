@@ -32,7 +32,7 @@ function makeEngine(evalValue = 0): UciEngine {
 describe('analyseGame', () => {
   it('throws for an empty PGN', async () => {
     const engine = makeEngine();
-    await expect(analyseGame(engine, '', 20)).rejects.toThrow('no moves');
+    await expect(analyseGame(engine, '', 20)).rejects.toThrow('cannot be empty');
   });
 
   it('returns text and json for a valid PGN', async () => {

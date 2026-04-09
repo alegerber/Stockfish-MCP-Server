@@ -14,10 +14,44 @@ import { analyseGame } from './tools/analyse-game.js';
 import { lookupOpeningByQuery, identifyOpeningFromPgn } from './tools/openings.js';
 import { generatePuzzle } from './tools/puzzle.js';
 
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+/** Parse a positive integer env var, warning and falling back to default on invalid input. */
+function parsePositiveInt(raw: string | undefined, name: string, defaultValue: number): number {
+  if (raw === undefined || raw === '') return defaultValue;
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    console.error(`[chess-mcp] Invalid ${name}: "${raw}", using default ${defaultValue}`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
+/**
+ * Wraps a tool handler function with uniform error handling.
+ * On success returns structured content; on failure returns isError with the message.
+ */
+function wrapTool<T>(
+  fn: (args: T) => Promise<{ text: string; json: Record<string, unknown> }>
+) {
+  return async (args: T) => {
+    try {
+      const result = await fn(args);
+      return {
+        content: [{ type: 'text' as const, text: result.text }],
+        structuredContent: result.json,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { isError: true as const, content: [{ type: 'text' as const, text: `Error: ${msg}` }] };
+    }
+  };
+}
+
 // ── Stockfish configuration ──────────────────────────────────────────────
 const SF_PATH = process.env.STOCKFISH_PATH ?? 'stockfish';
-const SF_THREADS = parseInt(process.env.STOCKFISH_THREADS ?? '2', 10);
-const SF_HASH = parseInt(process.env.STOCKFISH_HASH ?? '128', 10);
+const SF_THREADS = parsePositiveInt(process.env.STOCKFISH_THREADS, 'STOCKFISH_THREADS', 2);
+const SF_HASH = parsePositiveInt(process.env.STOCKFISH_HASH, 'STOCKFISH_HASH', 128);
 
 const sfEngine = new StockfishEngine(SF_PATH, SF_THREADS, SF_HASH);
 
@@ -25,8 +59,8 @@ const sfEngine = new StockfishEngine(SF_PATH, SF_THREADS, SF_HASH);
 const LC0_PATH = process.env.LC0_PATH ?? 'lc0';
 const LC0_WEIGHTS = process.env.LC0_WEIGHTS_PATH ?? '';
 const LC0_BACKEND = process.env.LC0_BACKEND; // undefined = Lc0 auto-detects
-const LC0_THREADS = parseInt(process.env.LC0_THREADS ?? '2', 10);
-const LC0_HASH = parseInt(process.env.LC0_HASH ?? '128', 10);
+const LC0_THREADS = parsePositiveInt(process.env.LC0_THREADS, 'LC0_THREADS', 2);
+const LC0_HASH = parsePositiveInt(process.env.LC0_HASH, 'LC0_HASH', 128);
 const lc0Enabled = LC0_WEIGHTS.length > 0;
 let lc0Engine: Lc0Engine | null = null;
 
@@ -69,18 +103,7 @@ Examples:
       openWorldHint: false,
     },
   },
-  async ({ fen, depth, multiPv }) => {
-    try {
-      const result = await analysePosition(sfEngine, fen, depth, multiPv);
-      return {
-        content: [{ type: 'text', text: result.text }],
-        structuredContent: result.json,
-      };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
-    }
-  }
+  wrapTool(({ fen, depth, multiPv }) => analysePosition(sfEngine, fen, depth, multiPv))
 );
 
 // ── Tool 2: Analyse Game ──────────────────────────────────────────────────
@@ -116,18 +139,7 @@ Examples:
       openWorldHint: false,
     },
   },
-  async ({ pgn, depth }) => {
-    try {
-      const result = await analyseGame(sfEngine, pgn, depth);
-      return {
-        content: [{ type: 'text', text: result.text }],
-        structuredContent: result.json,
-      };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
-    }
-  }
+  wrapTool(({ pgn, depth }) => analyseGame(sfEngine, pgn, depth))
 );
 
 // ── Tool 3: Lookup Opening ────────────────────────────────────────────────
@@ -157,13 +169,7 @@ Examples:
       openWorldHint: false,
     },
   },
-  async ({ query }) => {
-    const result = lookupOpeningByQuery(query);
-    return {
-      content: [{ type: 'text', text: result.text }],
-      structuredContent: result.json,
-    };
-  }
+  wrapTool(({ query }) => Promise.resolve(lookupOpeningByQuery(query)))
 );
 
 // ── Tool 4: Identify Opening ──────────────────────────────────────────────
@@ -194,13 +200,7 @@ Examples:
       openWorldHint: false,
     },
   },
-  async ({ pgn }) => {
-    const result = identifyOpeningFromPgn(pgn);
-    return {
-      content: [{ type: 'text', text: result.text }],
-      structuredContent: result.json,
-    };
-  }
+  wrapTool(({ pgn }) => Promise.resolve(identifyOpeningFromPgn(pgn)))
 );
 
 // ── Tool 5: Generate Puzzle ───────────────────────────────────────────────
@@ -233,18 +233,7 @@ Examples:
       openWorldHint: false,
     },
   },
-  async ({ fen, depth }) => {
-    try {
-      const result = await generatePuzzle(sfEngine, fen, depth);
-      return {
-        content: [{ type: 'text', text: result.text }],
-        structuredContent: result.json,
-      };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
-    }
-  }
+  wrapTool(({ fen, depth }) => generatePuzzle(sfEngine, fen, depth))
 );
 
 // ── Lc0 Tools (only registered when LC0_WEIGHTS_PATH is set) ──────────────
@@ -291,18 +280,7 @@ Examples:
         openWorldHint: false,
       },
     },
-    async ({ fen, depth, multiPv }) => {
-      try {
-        const result = await analysePosition(requireLc0(), fen, depth, multiPv);
-        return {
-          content: [{ type: 'text', text: result.text }],
-          structuredContent: result.json,
-        };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
-      }
-    }
+    wrapTool(({ fen, depth, multiPv }) => analysePosition(requireLc0(), fen, depth, multiPv))
   );
 
   // ── Lc0 Tool 2: Analyse Game ─────────────────────────────────────────
@@ -338,18 +316,7 @@ Examples:
         openWorldHint: false,
       },
     },
-    async ({ pgn, depth }) => {
-      try {
-        const result = await analyseGame(requireLc0(), pgn, depth);
-        return {
-          content: [{ type: 'text', text: result.text }],
-          structuredContent: result.json,
-        };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
-      }
-    }
+    wrapTool(({ pgn, depth }) => analyseGame(requireLc0(), pgn, depth))
   );
 
   // ── Lc0 Tool 3: Generate Puzzle ──────────────────────────────────────
@@ -380,18 +347,7 @@ Examples:
         openWorldHint: false,
       },
     },
-    async ({ fen, depth }) => {
-      try {
-        const result = await generatePuzzle(requireLc0(), fen, depth);
-        return {
-          content: [{ type: 'text', text: result.text }],
-          structuredContent: result.json,
-        };
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { isError: true, content: [{ type: 'text', text: `Error: ${msg}` }] };
-      }
-    }
+    wrapTool(({ fen, depth }) => generatePuzzle(requireLc0(), fen, depth))
   );
 
   console.error('[chess-mcp] Lc0 tools registered: lc0_analyse_position, lc0_analyse_game, lc0_generate_puzzle');
