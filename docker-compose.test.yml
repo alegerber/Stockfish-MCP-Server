@@ -1,0 +1,8 @@
+services:
+  integration-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: stockfish-lc0-mcp-test
+    environment:
+      - STOCKFISH_PATH=/usr/games/stockfish

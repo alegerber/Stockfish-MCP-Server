@@ -1,3 +1,4 @@
+/// <reference types="node" />
 /**
  * Integration tests — require a real Stockfish binary in PATH.
  * Run with: npm run test:integration
@@ -14,15 +15,16 @@ import { START_FEN } from '../src/constants.js';
 
 // ── Skip the whole suite if Stockfish is not installed ────────────────────
 
-const stockfishAvailable = spawnSync('stockfish', ['--help'], { timeout: 3000 }).status !== null
-  && spawnSync('stockfish', ['--help'], { timeout: 3000 }).error === undefined;
+const SF_BIN = process.env.STOCKFISH_PATH ?? 'stockfish';
+const sfProbe = spawnSync(SF_BIN, ['--help'], { timeout: 3000 });
+const stockfishAvailable = sfProbe.error === undefined && sfProbe.status !== null;
 
 const describeIfSf = stockfishAvailable ? describe : describe.skip;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function makeEngine(): StockfishEngine {
-  return new StockfishEngine('stockfish', 1, 16);
+  return new StockfishEngine(SF_BIN, 1, 16);
 }
 
 // ── Suite ─────────────────────────────────────────────────────────────────
