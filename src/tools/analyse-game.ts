@@ -10,6 +10,9 @@ export async function analyseGame(
   pgn: string,
   depth: number
 ): Promise<{ text: string; json: Record<string, unknown> }> {
+  if (!pgn.trim()) {
+    throw new Error('PGN cannot be empty. Please provide a valid game.');
+  }
   const { moves, headers } = parsePgn(pgn);
   if (moves.length === 0) {
     throw new Error('PGN contains no moves. Please provide a valid game.');

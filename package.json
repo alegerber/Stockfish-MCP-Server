@@ -12,7 +12,9 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
-    "test": "vitest run",
+    "test": "vitest run --exclude tests/integration.test.ts",
+    "test:integration": "vitest run tests/integration.test.ts",
+    "test:all": "vitest run",
     "lint": "eslint"
   },
   "dependencies": {

@@ -1,5 +1,5 @@
 // Formatting utilities for engine output
-import type { UciScore, PositionAnalysis, MoveAnalysis, MoveClassification, GameAnalysis } from '../types.js';
+import type { UciScore, PositionAnalysis, MoveClassification, GameAnalysis } from '../types.js';
 
 /** Format a UCI score as a human-readable string. */
 export function formatScore(score: UciScore): string {

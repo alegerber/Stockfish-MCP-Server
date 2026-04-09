@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "chess": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "STOCKFISH_PATH": "stockfish",
+        "STOCKFISH_THREADS": "2",
+        "STOCKFISH_HASH": "128"
+      }
+    }
+  }
+}
