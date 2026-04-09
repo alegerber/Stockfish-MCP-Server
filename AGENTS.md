@@ -63,7 +63,7 @@ LC0_WEIGHTS_PATH=/path/to/weights.pb.gz npm start
 
 # Docker (recommended — both engines enabled by default)
 docker compose up --build
-docker run -i --rm chess-engine-mcp-server
+docker run -i --rm stockfish-lc0-mcp
 ```
 
 ## Module System
@@ -166,7 +166,7 @@ Engine integration tests (real Stockfish/Lc0 subprocess) are not present — the
 To verify tools work against a real engine, send JSON-RPC messages to the Docker container over stdin:
 
 ```bash
-docker run -i --rm chess-engine-mcp-server <<'EOF'
+docker run -i --rm stockfish-lc0-mcp <<'EOF'
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}
 {"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}

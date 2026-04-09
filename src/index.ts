@@ -35,7 +35,7 @@ if (lc0Enabled) {
 }
 
 const server = new McpServer({
-  name: 'chess-engine-mcp-server',
+  name: 'stockfish-lc0-mcp',
   version: '2.0.0',
 });
 
